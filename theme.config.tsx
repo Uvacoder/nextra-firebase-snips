@@ -9,7 +9,8 @@ const config: DocsThemeConfig = {
   // chat: {
   //   link: 'https://discord.com',
   // },
-  docsRepositoryBase: 'https://github.com/shreyas-jadhav/web-dev-wiki',
+  docsRepositoryBase:
+    'https://github.com/shreyas-jadhav/web-dev-wiki/tree/main',
 };
 
 export default config;
