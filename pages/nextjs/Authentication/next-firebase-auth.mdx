@@ -1,0 +1,341 @@
+# Next.js and Firebase Authentication using `next-firebase-auth`
+
+This guide will show you how to use [`next-firebase-auth`](https://www.npmjs.com/package/next-firebase-auth) to add authentication to your Next.js app.
+
+## Overview
+
+- [Setup for `next-firebase-auth`](#setup)
+- [Login page](#login-page)
+- [Protected Page (That require authentication)](#protected-page)
+- [Sign Out User](#sign-out-functionality)
+- [Access User Information](#accessing-user-information)
+
+## Full Example
+
+You can find the full example [here](https://github.com/shreyas-jadhav/next-firebase-template).
+
+## Setup
+
+### Step 1: Install the dependencies
+
+Firebase Client SDK:
+
+```bash copy
+npm i firebase
+```
+
+Firebase Admin SDK:
+
+```bash copy
+npm i firebase-admin
+```
+
+next-firebase-auth:
+
+```bash copy
+npm i next-firebase-auth@canary
+```
+
+Note: To use version 9 of Firebaes Client SDK we need to use `next-firebase-auth@canary`.
+
+### Step 2: Create `initAuth.ts` file
+
+Create a file called `initAuth.ts` in the `utils` of your project.
+
+```ts filename="utils/initAuth.ts" copy
+import { init } from 'next-firebase-auth';
+import { AppConfig } from './config';
+
+const initAuth = () => {
+  // throw errors if required envrionment variables are not available
+  if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
+    throw new Error('NEXT_PUBLIC_FIREBASE_API_KEY is not defined');
+  }
+  if (!process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID) {
+    throw new Error('NEXT_PUBLIC_FIREBASE_PROJECT_ID is not defined');
+  }
+  if (!process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN) {
+    throw new Error('NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN is not defined');
+  }
+  if (!process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL) {
+    throw new Error('NEXT_PUBLIC_FIREBASE_DATABASE_URL is not defined');
+  }
+  if (typeof window == 'undefined' && !process.env.FIREBASE_CLIENT_EMAIL) {
+    throw new Error('FIREBASE_CLIENT_EMAIL is not defined');
+  }
+  if (typeof window == 'undefined' && !process.env.FIREBASE_PRIVATE_KEY) {
+    throw new Error('FIREBASE_PRIVATE_KEY is not defined');
+  }
+
+  init({
+    authPageURL: '/login',
+    appPageURL: '/dashboard',
+    loginAPIEndpoint: '/api/login',
+    logoutAPIEndpoint: '/api/logout',
+    onLoginRequestError: (err) => {
+      console.error(err);
+    },
+    onLogoutRequestError: (err) => {
+      console.error(err);
+    },
+
+    firebaseAdminInitConfig: {
+      credential: {
+        projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL as string,
+        // The private key must not be accessible on the client side.
+        privateKey: process.env.FIREBASE_PRIVATE_KEY as string,
+      },
+      databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+    },
+    // Use application default credentials (takes precedence over firebaseAdminInitConfig if set)
+    // useFirebaseAdminDefaultCredential: true,
+    firebaseClientInitConfig: {
+      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY, // required
+      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+      databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    },
+    cookies: {
+      name: 'Your App', // required
+      // Keys are required unless you set `signed` to `false`.
+      // The keys cannot be accessible on the client side.
+      keys: [
+        process.env.COOKIE_SECRET_CURRENT,
+        process.env.COOKIE_SECRET_PREVIOUS,
+      ],
+      httpOnly: true,
+      maxAge: 12 * 60 * 60 * 24 * 1000, // twelve days
+      overwrite: true,
+      path: '/',
+      sameSite: 'strict',
+      secure: process.env.NODE_ENV === 'production', // set this to false in local (non-HTTPS) development
+      signed: true,
+    },
+    onVerifyTokenError: (err) => {
+      console.error(err);
+    },
+    onTokenRefreshError: (err) => {
+      console.error(err);
+    },
+  });
+};
+
+export default initAuth;
+```
+
+- `authPageURL` is the page that will be redirected to if the user is not authenticated.
+- `appPageURL` is the page that will be redirected to if the user is authenticated.
+- `cookies.name` will be used for the cookie that will be set.
+- `cookies.secure` needs to be set to `false` in local (non-HTTPS) development. Therefore, we are checking if the `NODE_ENV` is `production` or not.
+
+### Step 3: Set up API routes
+
+These API routes will automatically be called by `next-firebase-auth` when the user logs in or out.
+They will set the cookies that will be used to authenticate the user.
+
+Create a file called `login.ts` in the `pages/api` of your project, that will set the cookies.
+
+```ts filename="pages/api/login.ts" copy
+import type { NextApiHandler } from 'next';
+import { setAuthCookies } from 'next-firebase-auth';
+import initAuth from '@/utils/initAuth';
+
+initAuth();
+
+const handler: NextApiHandler = async (req, res) => {
+  try {
+    await setAuthCookies(req, res);
+  } catch (e) {
+    return res.status(500).json({ error: 'Unexpected error.' });
+  }
+  return res.status(200).json({ success: true });
+};
+
+export default handler;
+```
+
+Create a file called `logout.ts` in the `pages/api` of your project, that will unset the cookies.
+
+```ts filename="pages/api/logout.ts" copy
+import { unsetAuthCookies } from 'next-firebase-auth';
+import initAuth from '@/utils/initAuth';
+import { NextApiHandler } from 'next';
+
+initAuth();
+
+const handler: NextApiHandler = async (req, res) => {
+  try {
+    await unsetAuthCookies(req, res);
+  } catch (e) {
+    return res.status(500).json({ error: 'Unexpected error.' });
+  }
+  return res.status(200).json({ success: true });
+};
+
+export default handler;
+```
+
+### Step 4: Set up Environment Variables
+
+Create a file called `.env.local` in the root of your project, and add the following environment variables.
+
+```bash filename=".env.local" copy
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=
+NEXT_PUBLIC_FIREBASE_DATABASE_URL=
+FIREBASE_PRIVATE_KEY=
+FIREBASE_CLIENT_EMAIL=
+
+COOKIE_SECRET_CURRENT=
+COOKIE_SECRET_PREVIOUS=
+```
+
+- `COOKIE_SECRET_CURRENT` and `COOKIE_SECRET_PREVIOUS` are used to sign the cookies. You can use any random string for these values.
+- You can find the values for the other environment variables in your Firebase project settings.
+- `FIREBASE_PRIVATE_KEY` and `FIREBASE_CLIENT_EMAIL` can be found in the service account settings of your Firebase project.
+- For `FIREBASE_PRIVATE_KEY`, you will need to wrap the value in double quotes.
+
+### Step 5: Call `initAuth` in `_app.tsx`
+
+In the `pages/_app.tsx` file, call the `initAuth` function that we created in the previous step.
+
+```tsx filename="pages/_app.tsx" copy
+import { initAuth } from 'next-firebase-auth';
+import initAuth from '@/utils/initAuth';
+
+initAuth(); // <-- add this line
+
+function MyApp({ Component, pageProps }) {
+  return <Component {...pageProps} />;
+}
+
+export default MyApp;
+```
+
+## Login Page
+
+To create a login page, create a file called `login.tsx` in the `pages` directory of your project.
+
+```tsx filename="pages/login.tsx" copy
+import {
+  AuthAction,
+  withAuthUser,
+  withAuthUserTokenSSR,
+} from 'next-firebase-auth';
+
+// we want this page to only open when user it not logged in;
+const LoginPage = () => {
+  return <div>...</div>;
+};
+
+// this will do a server side redirect to the login page if the user is not logged in
+export const getServerSideProps = withAuthUserTokenSSR({
+  whenAuthed: AuthAction.REDIRECT_TO_APP,
+  whenUnauthed: AuthAction.RENDER,
+})();
+
+// this will do a client side redirect to the login page once the user is logged in
+export default withAuthUser({
+  whenAuthed: AuthAction.REDIRECT_TO_APP,
+  whenUnauthedAfterInit: AuthAction.RENDER,
+})(LoginPage);
+```
+
+### `withAuthUser`
+
+We have used the `withAuthUser` HOC to wrap the `LoginPage` component.
+It will server two purposes:
+
+1. Automatically do a client side redirect to the login page once the user is logged in.
+2. Allow us to use the `useAuthUser` hook to get the user's information.
+
+### `withAuthUserTokenSSR`
+
+`withAuthUserTokenSSR` will check the authentication status of the user on the server side. If the user is not logged in, it will render the `LoginPage` component. If the user is logged in, it will do a server side redirect to the app page.
+
+You can add your own login methods in the `LoginPage` component. Or refer the full file in the [example project](https://github.com/shreyas-jadhav/next-firebase-template).
+
+## Protected Page
+
+Similarly, to render the page only when the user is logged in, we will tweak the `withAuthUserTokenSSR` and `withAuthUser` HOCs as follows:
+
+```tsx filename="pages/index.tsx" copy
+import {
+  AuthAction,
+  withAuthUser,
+  withAuthUserTokenSSR,
+} from 'next-firebase-auth';
+
+// we want this page to only open when user is logged in;
+const Dashboard = () => {
+  return <div>...</div>;
+};
+
+// this will do a server side redirect to the login page if the user is not logged in
+export const getServerSideProps = withAuthUserTokenSSR({
+  whenAuthed: AuthAction.RENDER,
+  whenUnauthed: AuthAction.REDIRECT_TO_LOGIN,
+})();
+
+// this will do a client side redirect to the login page once the user is logged out
+export default withAuthUser({
+  whenAuthed: AuthAction.RENDER,
+  whenUnauthedAfterInit: AuthAction.REDIRECT_TO_LOGIN,
+})(Dashboard);
+```
+
+## Sign Out Functionality
+
+`useAuthUser` hook can be used to get the `signOut` function.
+
+```tsx filename="pages/index.tsx" copy
+import { useAuthUser } from 'next-firebase-auth';
+
+const Dashboard = () => {
+  const AuthUser = useAuthUser();
+
+  return (
+    <div>
+      <button onClick={AuthUser.signOut}>Sign Out</button>
+    </div>
+  );
+};
+```
+
+Important Note: `useAuthUser` will only be available if the page is wrapped with `withAuthUser` HOC.
+
+## Accessing User Information
+
+### Client Side:
+
+`useAuthUser` hook can be used to get the user's information.
+
+```tsx
+const AuthUser = useAuthUser();
+
+console.log(AuthUser.id); // user id
+```
+
+### Server Side:
+
+`withAuthUserTokenSSR` allows us to pass our own `getServerSideProps` function as a parameter. It will be called with the `AuthUser` object as a parameter.
+
+```tsx
+export const getServerSideProps = withAuthUserTokenSSR({
+  whenAuthed: AuthAction.RENDER,
+  whenUnauthed: AuthAction.REDIRECT_TO_LOGIN,
+})(({ AuthUser }) => {
+  console.log(AuthUser.id); // user id
+  // do whatever you want with the AuthUser object
+
+  return {
+    props: {},
+  };
+});
+```
